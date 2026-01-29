@@ -3,23 +3,20 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>Ping Pong Réaliste</title>
+<title>Snake Forêt 3D</title>
 
 <style>
 html, body {
     margin: 0;
     padding: 0;
-    background: radial-gradient(circle at top, #1a2a3a, #000);
     overflow: hidden;
     font-family: Arial, sans-serif;
-    color: white;
+    background: #000;
 }
 
-canvas {
-    display: block;
-    margin: auto;
-    background: linear-gradient(#0b3d2e, #04251c);
-    box-shadow: 0 0 30px rgba(0,255,200,0.4);
+/* Fond forêt */
+body {
+    background: linear-gradient(#0b3d1a, #021a0c);
 }
 
 /* UI */
@@ -28,9 +25,54 @@ canvas {
     top: 10px;
     width: 100%;
     text-align: center;
+    color: #fff;
     font-size: 18px;
+    z-index: 2;
 }
 
+/* Canvas */
+canvas {
+    display: block;
+    margin: auto;
+    background:
+        radial-gradient(circle at top, rgba(255,255,255,0.05), transparent),
+        repeating-linear-gradient(
+            45deg,
+            rgba(0,0,0,0.05),
+            rgba(0,0,0,0.05) 10px,
+            rgba(255,255,255,0.02) 10px,
+            rgba(255,255,255,0.02) 20px
+        );
+}
+
+/* Boutons directionnels */
+#controls {
+    position: absolute;
+    bottom: 20px;
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    gap: 15px;
+    z-index: 2;
+}
+
+.control-btn {
+    width: 65px;
+    height: 65px;
+    border-radius: 50%;
+    border: none;
+    font-size: 26px;
+    background: radial-gradient(circle at top, #3cff8f, #0a7a3f);
+    color: #003d1f;
+    box-shadow: inset 0 4px 8px rgba(255,255,255,0.3),
+                0 6px 15px rgba(0,0,0,0.6);
+}
+
+.control-btn:active {
+    transform: scale(0.95);
+}
+
+/* Game Over */
 #gameOver {
     position: absolute;
     inset: 0;
@@ -39,16 +81,17 @@ canvas {
     align-items: center;
     justify-content: center;
     flex-direction: column;
+    color: white;
+    z-index: 3;
 }
 
 #gameOver button {
     margin-top: 20px;
-    padding: 14px 34px;
+    padding: 14px 30px;
     font-size: 18px;
-    background: #00ffd5;
+    background: #3cff8f;
     border: none;
     border-radius: 30px;
-    cursor: pointer;
 }
 </style>
 </head>
@@ -56,20 +99,22 @@ canvas {
 <body>
 
 <div id="ui">
-    🏆 Best: <span id="best">0</span> | 🎯 Score: <span id="score">0</span>
+    🏆 Best: <span id="best">0</span> | 🍌 Score: <span id="score">0</span>
 </div>
 
 <canvas id="game"></canvas>
 
 <div id="gameOver">
-    <h1>💥 Game Over</h1>
+    <h1>💀 Game Over</h1>
     <button onclick="restart()">🔄 Rejouer</button>
 </div>
 
-<!-- Sons -->
-<audio id="hit" src="https://assets.mixkit.co/sfx/preview/mixkit-arcade-game-jump-coin-216.wav"></audio>
-<audio id="lose" src="https://assets.mixkit.co/sfx/preview/mixkit-retro-arcade-game-over-470.wav"></audio>
-<audio id="bgm" src="https://assets.mixkit.co/music/preview/mixkit-tech-house-vibes-130.mp3" loop></audio>
+<div id="controls">
+    <button class="control-btn" onclick="setDir(0,-1)">⬆️</button>
+    <button class="control-btn" onclick="setDir(-1,0)">⬅️</button>
+    <button class="control-btn" onclick="setDir(1,0)">➡️</button>
+    <button class="control-btn" onclick="setDir(0,1)">⬇️</button>
+</div>
 
 <script>
 const canvas = document.getElementById("game");
@@ -82,95 +127,96 @@ function resize(){
 resize();
 window.addEventListener("resize", resize);
 
-let paddleW = 140;
-let paddleH = 18;
+const box = 24;
+let snake, food, dx, dy, score, running;
 
-let player, ai, ball;
-let score = 0;
-let best = localStorage.getItem("pongBest") || 0;
+let best = localStorage.getItem("snakeForestBest") || 0;
 document.getElementById("best").innerText = best;
 
 function init(){
-    player = { x: canvas.width/2 - paddleW/2, y: canvas.height - 40 };
-    ai = { x: canvas.width/2 - paddleW/2, y: 30 };
-    ball = {
-        x: canvas.width/2,
-        y: canvas.height/2,
-        r: 10,
-        dx: 5,
-        dy: 5
-    };
+    snake = [{x:10, y:10}];
+    food = spawnFood();
+    dx = 1; dy = 0;
     score = 0;
+    running = true;
     document.getElementById("score").innerText = score;
     document.getElementById("gameOver").style.display = "none";
-    document.getElementById("bgm").volume = 0.4;
-    document.getElementById("bgm").play();
 }
 init();
 
-function drawPaddle(p){
-    ctx.fillStyle = "#00ffd5";
-    ctx.shadowColor = "#00ffd5";
-    ctx.shadowBlur = 15;
-    ctx.fillRect(p.x, p.y, paddleW, paddleH);
+function spawnFood(){
+    return {
+        x: Math.floor(Math.random() * (canvas.width / box)),
+        y: Math.floor(Math.random() * (canvas.height / box))
+    };
 }
 
-function drawBall(){
-    ctx.beginPath();
-    ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2);
-    ctx.fillStyle = "#fff";
-    ctx.shadowBlur = 20;
-    ctx.fill();
+function setDir(x,y){
+    if(dx === -x && dy === -y) return;
+    dx = x; dy = y;
+}
+
+function drawSnakePart(x,y,i){
+    let px = x * box;
+    let py = y * box;
+
+    let grad = ctx.createLinearGradient(px, py, px, py + box);
+    grad.addColorStop(0, i===0 ? "#7dffb0" : "#2ecc71");
+    grad.addColorStop(1, "#0a5c2f");
+
+    ctx.fillStyle = grad;
+    ctx.shadowColor = "#00ff88";
+    ctx.shadowBlur = i === 0 ? 15 : 6;
+    ctx.fillRect(px, py, box, box);
+
+    ctx.strokeStyle = "rgba(0,0,0,0.3)";
+    ctx.strokeRect(px, py, box, box);
+}
+
+function drawBanana(x,y){
+    ctx.font = `${box}px serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.shadowColor = "yellow";
+    ctx.shadowBlur = 15;
+    ctx.fillText("🍌", x*box + box/2, y*box + box/2);
 }
 
 function update(){
+    if(!running) return;
+
     ctx.clearRect(0,0,canvas.width,canvas.height);
 
-    drawPaddle(player);
-    drawPaddle(ai);
-    drawBall();
+    snake.forEach((p,i)=> drawSnakePart(p.x,p.y,i));
+    drawBanana(food.x, food.y);
 
-    ball.x += ball.dx;
-    ball.y += ball.dy;
+    let head = {x: snake[0].x + dx, y: snake[0].y + dy};
 
-    // Mur
-    if(ball.x < ball.r || ball.x > canvas.width - ball.r){
-        ball.dx *= -1;
-        document.getElementById("hit").play();
+    if(head.x < 0 || head.y < 0 ||
+       head.x*box > canvas.width ||
+       head.y*box > canvas.height ||
+       snake.some(p => p.x===head.x && p.y===head.y)){
+        gameOver();
+        return;
     }
 
-    // Raquette joueur
-    if(ball.y + ball.r > player.y &&
-       ball.x > player.x && ball.x < player.x + paddleW){
-        ball.dy *= -1.05;
+    snake.unshift(head);
+
+    if(head.x === food.x && head.y === food.y){
         score++;
         document.getElementById("score").innerText = score;
-        document.getElementById("hit").play();
-    }
-
-    // Raquette IA
-    if(ball.y - ball.r < ai.y + paddleH &&
-       ball.x > ai.x && ball.x < ai.x + paddleW){
-        ball.dy *= -1.05;
-        document.getElementById("hit").play();
-    }
-
-    // IA simple mais fluide
-    ai.x += (ball.x - (ai.x + paddleW/2)) * 0.08;
-
-    // Game over
-    if(ball.y > canvas.height){
-        endGame();
+        food = spawnFood();
+    } else {
+        snake.pop();
     }
 }
 
-function endGame(){
-    document.getElementById("bgm").pause();
-    document.getElementById("lose").play();
+function gameOver(){
+    running = false;
     document.getElementById("gameOver").style.display = "flex";
     if(score > best){
         best = score;
-        localStorage.setItem("pongBest", best);
+        localStorage.setItem("snakeForestBest", best);
         document.getElementById("best").innerText = best;
     }
 }
@@ -179,20 +225,7 @@ function restart(){
     init();
 }
 
-// Contrôle tactile & souris
-function movePaddle(x){
-    player.x = x - paddleW/2;
-    if(player.x < 0) player.x = 0;
-    if(player.x + paddleW > canvas.width) player.x = canvas.width - paddleW;
-}
-
-canvas.addEventListener("mousemove", e => movePaddle(e.clientX));
-canvas.addEventListener("touchmove", e => {
-    e.preventDefault();
-    movePaddle(e.touches[0].clientX);
-},{passive:false});
-
-setInterval(update, 16);
+setInterval(update, 120);
 </script>
 
 </body>
